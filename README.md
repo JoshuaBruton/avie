@@ -1,5 +1,5 @@
 # A.V.I.E.
-[**Anomaly Vision Intelligence Engine**] - An AI-powered pipeline to scan satellite imagery for wildlife and anomalies using YOLO and Computer Vision. 
+[**Anomaly Vision Intelligence Engine**] - A geospatial computer-vision pipeline that retrieves satellite imagery for selected coordinates, runs YOLOv8 object detection, and logs potential findings for review. Expanding toward systematic area scanning and anomaly analysis.
 
 
 
