@@ -1,0 +1,8 @@
+opencv-python>=4.8,<5
+torch>=2.2,<3
+torchvision>=0.17,<1
+geopy>=2.4,<3
+requests>=2.31,<3
+Pillow>=10,<13
+matplotlib>=3.8,<4
+ultralytics>=8.3,<9
