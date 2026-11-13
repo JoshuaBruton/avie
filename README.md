@@ -64,3 +64,13 @@ The viewer shows “High-detail imagery unavailable for this location” when re
 metadata is missing. No synthetic enhancement is applied.
 
 Run policy/report checks with `python -m unittest discover -s tests -v`.
+
+## Current interactive application
+
+The current dark satellite-analysis GUI, persistent scan API, and Python worker are in **[app/](app/README.md)**. The original CLI scripts remain available.
+
+The app includes overlapping-tile satellite analysis, structure/remnant candidates, dedicated aerial human detection, wildlife categories, mapped agriculture and heritage context, saved reviews/history, close-up rescans, and reviewed training-crop export. Image candidates are unconfirmed; known map records are labelled separately. No detector identifies every person or archaeological site.
+
+See [app/README.md](app/README.md) for setup, licensing, and limitations, and [app/VALIDATION.md](app/VALIDATION.md) for verification evidence. Custom human training needs reviewed positive/negative examples and independent-site validation; it does not run automatically. Credentials and downloaded model weights are excluded.
+
+The native-resolution eligibility rules and capture-metadata reporting described above currently apply to the original CLI and tile viewer. The web app remains a separate workflow; these changes do not establish high-detail provider coverage or update the web scan API.
