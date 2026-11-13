@@ -8,6 +8,7 @@ from ttkbootstrap.constants import *
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from brutils.paths import DETECTIONS_LOG, ANNOTATED_OUTPUT
+from brutils.imagery import assess_imagery, capture_label
 
 
 class TileViewer:
@@ -54,10 +55,12 @@ class TileViewer:
         base_filename = os.path.basename(raw_img_path)
         annotated_img_path = os.path.join(ANNOTATED_OUTPUT, base_filename)
 
-        image_path = annotated_img_path if os.path.exists(annotated_img_path) else raw_img_path
+        eligible = assess_imagery(entry.get("imagery", {}))["eligible"]
+        image_path = annotated_img_path if eligible and os.path.exists(annotated_img_path) else raw_img_path
 
         if os.path.exists(image_path):
-            img = Image.open(image_path).resize((480, 480))
+            img = Image.open(image_path)
+            img.thumbnail((480, 480))  # Never enlarge beyond source pixels.
             photo = ImageTk.PhotoImage(img)
             self.img_label.config(image=photo)
             self.img_label.image = photo
@@ -67,12 +70,21 @@ class TileViewer:
         # Show metadata
         self.meta_text.delete("1.0", tk.END)
         info = f"""
-🕒 Timestamp: {entry.get('timestamp')}
+Image captured: {capture_label(entry.get('imagery', {}))}
+Analysis performed: {entry.get('analysis_at', entry.get('timestamp', 'Unavailable'))}
+Source: {entry.get('imagery', {}).get('source', 'Unverified')}
+Native resolution: {entry.get('imagery', {}).get('native_gsd_cm') or 'Unknown'} cm/pixel
+Status: {entry.get('detection_status', 'Legacy report: imagery suitability unverified')}
+Findings describe the captured image, not current conditions.
 📍 Coordinates: {entry['coordinates']['latitude']}, {entry['coordinates']['longitude']}
 
 🎯 Detections:
 """
-        for det in entry.get("detections", []):
+        assessment = assess_imagery(entry.get("imagery", {}))
+        if not assessment["eligible"]:
+            info += "High-detail imagery unavailable for this location.\n"
+            info += "\n".join(assessment["limitations"]) + "\n"
+        for det in (entry.get("detections", []) if assessment["eligible"] else []):
             info += f"   - {det['class_name']} ({det['confidence']:.2f})\n"
 
         filters = entry.get("filters", {})

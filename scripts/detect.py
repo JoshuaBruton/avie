@@ -8,8 +8,12 @@ from PIL import Image
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from brutils.paths import ANNOTATED_OUTPUT
+from brutils.imagery import assess_imagery
 
-def run_detection(image_path, model_path="yolov8n.pt"):
+def run_detection(image_path, model_path="yolov8n.pt", imagery_metadata=None):
+    assessment = assess_imagery(imagery_metadata or {})
+    if not assessment["eligible"]:
+        raise ValueError("High-detail detection requires verified native aerial imagery and usage rights.")
     model = YOLO(model_path)
 
     results = model.predict(

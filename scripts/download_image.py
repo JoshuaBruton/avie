@@ -22,7 +22,9 @@ def download_satellite_image(lat, lon, save_path="data/raw_images/sat_image.jpg"
         f"&key={GOOGLE_API_KEY}"
     )
 
-    response = requests.get(url)
+    if not GOOGLE_API_KEY:
+        raise ValueError("Set GOOGLE_API_KEY for the optional context map download.")
+    response = requests.get(url, timeout=30)
     if response.status_code == 200:
         img = Image.open(BytesIO(response.content)).convert("RGB")
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -31,7 +33,7 @@ def download_satellite_image(lat, lon, save_path="data/raw_images/sat_image.jpg"
         return save_path
     else:
         print(f"❌ Failed to fetch image! Status Code: {response.status_code}")
-        print(f"URL: {url}")
+
         return None
 
 

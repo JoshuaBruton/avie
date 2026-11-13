@@ -1,0 +1,11 @@
+{
+  "source": "Provider confirmation required",
+  "source_type": "aerial",
+  "native_gsd_cm": null,
+  "captured_at": null,
+  "capture_date": null,
+  "capture_date_range": null,
+  "license_reference": null,
+  "analysis_permitted": false,
+  "display_permitted": false
+}
