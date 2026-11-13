@@ -22,6 +22,8 @@ from agriculture import fetch_agriculture
 from overhead import OverheadLocator
 from archaeology import propose_archaeology,fetch_heritage
 from people import PersonDetector
+from imagery_policy import assess_imagery, capture_label, load_baseline
+from datetime import datetime, timezone
 
 EARTH_RADIUS=6378137.0
 CLASS_IDS={'Car':2,'Truck':7,'Boat':8,'Airplane':4,'Bus':5,'Train':6}
@@ -56,9 +58,15 @@ def imagery_plan(config):
     if abs(east.longitude-lon)>180 or abs(west.longitude-lon)>180:raise ValueError('This area crosses the antimeridian. Move the center or reduce the radius.')
     half=max(half_x,half_y)
     width=min(4096,max(128,math.ceil(2*half/(2*math.pi*EARTH_RADIUS/(256*2**int(config.get('zoom',18)))))))
-    return {'bounds3857':[x-half,y-half,x+half,y+half],'width':width,'height':width,'groundResolutionMeters':round(2*config['radiusKm']*1000/width,3),'center':{'latitude':lat,'longitude':lon},'radiusKm':config['radiusKm'],'provider':'Esri World Imagery','attribution':'Esri, Maxar, Earthstar Geographics, and the GIS User Community','captureDate':None,'acquiredAt':None,'historical':True,'requestedZoom':int(config.get('zoom',18)),'detailNote':'Requested pixel spacing does not guarantee native source detail. The provider may resample imagery.'}
+    return {'bounds3857':[x-half,y-half,x+half,y+half],'width':width,'height':width,'groundResolutionMeters':round(2*config['radiusKm']*1000/width,3),'center':{'latitude':lat,'longitude':lon},'radiusKm':config['radiusKm'],'provider':'Esri World Imagery','attribution':'Esri, Maxar, Earthstar Geographics, and the GIS User Community','sourceType':'context','nativeGsdCm':None,'capturedAt':None,'captureDateRange':None,'analysisPermitted':False,'displayPermitted':False,'captureDate':None,'acquiredAt':None,'historical':True,'requestedZoom':int(config.get('zoom',18)),'detailNote':'Requested pixel spacing does not guarantee native source detail. The provider may resample imagery.'}
 
 def acquire(config,progress):
+    if config.get('source')=='aerial':
+        image,info=load_baseline(config['_baseline'])
+        info['acquiredAt']=datetime.now(timezone.utc).isoformat()
+        info['center']={'latitude':config['latitude'],'longitude':config['longitude']}
+        info['radiusKm']=config['radiusKm']
+        return image,info
     requested_zoom=int(config.get('zoom',18));info=None
     # Some regions have no imagery at the requested fine scale. Probe the export
     # scale first, then reacquire at a supported scale instead of returning blank
@@ -117,15 +125,19 @@ class Pipeline:
         return self.models[name]
     def run(self,config,output_dir,progress=lambda **kw:None):
         start=time.monotonic();output_dir=Path(output_dir);output_dir.mkdir(parents=True,exist_ok=True)
-        image,info=acquire(config,progress);image.save(output_dir/'imagery.jpg',quality=90)
+        analysis_at=datetime.now(timezone.utc).isoformat()
+        image,info=acquire(config,progress)
+        config={k:v for k,v in config.items() if k!='_baseline'}
+        assessment=assess_imagery(info);eligible=assessment['eligible']
+        image.save(output_dir/'imagery.jpg',quality=90)
         frame=cv2.cvtColor(np.asarray(image),cv2.COLOR_RGB2BGR);size=config['tileSize'];width,height=image.size
         windows=[(x,y) for y in window_starts(height,size) for x in window_starts(width,size)]
         detectors=[]
-        vehicle_ids=vehicle_class_ids(config)
-        species=animal_species(config);animal_ids=[ANIMAL_CLASS_IDS[name] for name in species]
-        groups=organism_categories(config);use_overhead=needs_overhead_locator(config);person_ids=[0] if needs_person_detector(config) else []
+        vehicle_ids=vehicle_class_ids(config) if eligible else []
+        species=animal_species(config) if eligible else [];animal_ids=[ANIMAL_CLASS_IDS[name] for name in species]
+        groups=organism_categories(config);use_overhead=eligible and needs_overhead_locator(config);person_ids=[0] if eligible and needs_person_detector(config) else []
         if vehicle_ids or animal_ids or person_ids:detectors.append((self.load_model(config['model']),vehicle_ids+animal_ids+person_ids,'object-model'))
-        if 'Building' in config['classes']:
+        if eligible and 'Building' in config['classes']:
             progress(stage='Loading satellite building-footprint model',progress=28,tileCount=len(windows),imagery=info)
             detectors.append((self.load_building_model(),[0],'building-model'))
         boxes=[];scores=[];class_ids=[];origins=[];polygons=[];sources=[];reverse_ids={v:k for k,v in {**CLASS_IDS,**ANIMAL_CLASS_IDS}.items()};reverse_ids[100]='Building';reverse_ids[0]='Person'
@@ -145,13 +157,13 @@ class Pipeline:
                     polygons.append(polygon)
                 completed+=1
                 progress(stage=f"{'Segmenting structures' if source=='building-model' else 'Detecting living-organism candidates' if person_ids else 'Detecting animals & vehicles' if animal_ids and vehicle_ids else 'Detecting animal candidates' if animal_ids else 'Detecting transport'} · {index+1}/{len(windows)} tiles",progress=30+int((24 if person_ids and config.get('useAerialPeople',False) else 39 if use_overhead else 54)*completed/total_inferences),tileCount=len(windows),tilesProcessed=index+1,imagery=info)
-        person_points=[];person_metadata={'status':'not_requested'}
+        person_points=[];person_metadata={'status':'not_requested' if eligible else 'not_assessed_insufficient_imagery'}
         if person_ids and config.get('useAerialPeople',False):
             try:person_points,person_metadata=self.people.predict(frame,config.get('personConfidence',15)/100,lambda **p:progress(**p,tileCount=len(windows),tilesProcessed=len(windows),imagery=info))
             except Exception:
                 import logging
                 logging.exception('Aerial human detector failed');person_metadata={'status':'unavailable','reason':'Aerial human model could not run; the general detector remains experimental.'}
-        aerial_points=[];aerial_metadata={'status':'not_requested'}
+        aerial_points=[];aerial_metadata={'status':'not_requested' if eligible else 'not_assessed_insufficient_imagery'}
         if use_overhead:
             try:aerial_points,aerial_metadata=self.overhead.predict(np.asarray(image),max(.2,config['confidence']/100),lambda **p:progress(**p,tileCount=len(windows),tilesProcessed=len(windows),imagery=info))
             except Exception:
@@ -159,7 +171,8 @@ class Pipeline:
                 logging.exception('Aerial wildlife locator failed')
                 aerial_metadata={'status':'unavailable','reason':'The aerial locator could not be loaded or run. No locator findings were inferred.'}
         progress(stage='Deduplicating and geolocating findings',progress=85,tileCount=len(windows),tilesProcessed=len(windows),imagery=info)
-        detections=[];notices=['Imagery is a historical mosaic, not a live feed. Capture dates are not supplied by this endpoint.','Vehicle classifications use general-purpose COCO weights. Building footprints use a separate satellite-trained segmentation model (keremberke/yolov8n-building-segmentation). Both can miss or misclassify objects.','Unknown features are geometry-based image proposals, not identified structures. They have no classification probability. No mode detects or identifies everything.','Coordinates and dimensions are estimates from image pixels. Requested detail may exceed the native resolution of the source imagery.']
+        detections=[];notices=['Findings describe the captured image, not current conditions. Image age is unrestricted; acquisition and analysis time are not capture time.','Vehicle classifications use general-purpose COCO weights. Building footprints use a separate satellite-trained segmentation model (keremberke/yolov8n-building-segmentation). Both can miss or misclassify objects.','Unknown features are geometry-based image proposals, not identified structures. They have no classification probability. No mode detects or identifies everything.','Coordinates and dimensions are estimates from image pixels. Requested detail may exceed the native resolution of the source imagery.']
+        if not eligible:notices.extend(['High-detail imagery unavailable for this location. People, animals and image features were not assessed.']+assessment['limitations'])
         if use_overhead and aerial_metadata['status']!='available':notices.append('The aerial wildlife locator was unavailable. General model candidates, if any, remain available; the aerial layer was not assessed.')
         if set(groups)&{'Aquatic/Marine Animals','Reptilian Creatures'}:notices.append('Aquatic/marine and reptilian categories are review-only: no specialist classifier is active. Add Unclassified Wildlife to request generic aerial candidate localization. No absence conclusion can be drawn for these categories.')
         if use_overhead and aerial_metadata['status']=='available':notices.append('OWL-C is an aerial-trained animal localizer, not a species classifier. Its heatmap activation is not a probability. Satellite accuracy improvement has not been measured. Model weights: CC BY-NC-SA 4.0, non-commercial research use; see https://zenodo.org/records/20802844 .')
@@ -194,7 +207,7 @@ class Pipeline:
         archaeology_analysis=None
         if 'Archaeology' in config['classes']:
             progress(stage='Searching image structure and remnant candidates',progress=85,tileCount=len(windows),tilesProcessed=len(windows),imagery=info)
-            candidates=propose_archaeology(frame,info['groundResolutionMeters'])
+            candidates=propose_archaeology(frame,info['groundResolutionMeters']) if eligible else []
             for candidate in candidates:
                 d=add_detection(candidate['box'],'Structure candidate',None,'archaeology-proposal','IMAGE',candidate['polygon'],candidate['description'])
                 if d is not None:d.update({'category':'Archaeology','assessment':'Possible structure/remnant','proposalRank':round(candidate['rank'],3),'componentCount':candidate['componentCount'],'isImageDiscovery':True,'archaeologicalAgeEstablished':False})
@@ -205,7 +218,7 @@ class Pipeline:
                 if d is not None:
                     d.update({k:feature[k] for k in ['label','mapTags','osmElementId','osmElementType','mapUrl']})
                     d.update({'category':'Archaeology','assessment':'Mapped historic feature','isImageDiscovery':False,'dimensionsMeters':None})
-            archaeology_analysis={'status':'available','imageMethod':'Multiscale contrast/stone-shadow clusters; not a trained archaeology classifier','imageCandidateCount':sum(d['origin']=='archaeology-proposal' for d in detections),'mappedContext':heritage_metadata,'mappedCount':sum(d['origin']=='mapped-heritage' for d in detections),'ageOrHumanOriginConfirmed':False,'accuracyValidated':False}
+            archaeology_analysis={'status':'available' if eligible else 'image_not_assessed_insufficient_imagery','imageDetectionStatus':'completed' if eligible else 'not_assessed','imageMethod':'Multiscale contrast/stone-shadow clusters; not a trained archaeology classifier','imageCandidateCount':sum(d['origin']=='archaeology-proposal' for d in detections),'mappedContext':heritage_metadata,'mappedCount':sum(d['origin']=='mapped-heritage' for d in detections),'ageOrHumanOriginConfirmed':False,'accuracyValidated':False}
             notices.append('Archaeology separates image-only structure/remnant candidates from previously mapped heritage. Neither image geometry nor a map tag proves age or archaeological significance. Natural rocks, trees, paths, and modern features can be false positives; unmapped/buried sites may be missed.')
         if person_ids:
             notices.append('Human search uses a dedicated aerial-trained model on magnified small crops when available. Aerial status: '+person_metadata['status']+'. Scores are model confidence, not confirmed presence or a reliable count. Small objects and imagery resampling remain limiting; reviewed crops can be saved as positive or negative training examples.')
@@ -227,7 +240,7 @@ class Pipeline:
                     d.update({k:field[k] for k in ['label','mapTags','osmElementId','osmElementType','cropFromMap']})
                     if field.get('holes'):d['holesNormalized']=[[[x/width,y/height] for x,y in ring] for ring in field['holes']]
             agriculture_analysis['includedFindingCount']=sum(d['origin']=='mapped-agriculture' for d in detections)
-        if 'Unknown feature' in config['classes']:
+        if eligible and 'Unknown feature' in config['classes']:
 
             progress(stage='Proposing unclassified visual features',progress=89,tileCount=len(windows),tilesProcessed=len(windows),imagery=info)
             proposals=propose_features(frame,info['groundResolutionMeters'],[d['bboxPixels'] for d in detections])
@@ -249,9 +262,9 @@ class Pipeline:
         else:
             chart_classes+=(['Person'] if person_ids else [])+species
             counts=[sum(d['type']==c for d in detections) for c in chart_classes]
-        fig,axis=plt.subplots(figsize=(max(9,len(chart_classes)*.8),3.5),facecolor='#101619');axis.set_facecolor('#101619');axis.bar(chart_classes,counts,color=[COLORS.get(c,'#e9a7cc') for c in chart_classes]);axis.tick_params(colors='#a9bbc4',labelsize=9);axis.tick_params(axis='x',labelrotation=35 if len(chart_classes)>8 else 0);axis.set_ylabel('Findings',color='#a9bbc4');axis.set_title('AVIE · Findings (marine/reptile specialist detection unavailable)' if set(groups)&{'Aquatic/Marine Animals','Reptilian Creatures'} else 'AVIE · Findings by category',color='#e3eaed');axis.yaxis.get_major_locator().set_params(integer=True)
+        fig,axis=plt.subplots(figsize=(max(9,len(chart_classes)*.8),3.5),facecolor='#101619');axis.set_facecolor('#101619');axis.bar(chart_classes,counts,color=[COLORS.get(c,'#e9a7cc') for c in chart_classes]);axis.tick_params(colors='#a9bbc4',labelsize=9);axis.tick_params(axis='x',labelrotation=35 if len(chart_classes)>8 else 0);axis.set_ylabel('Findings',color='#a9bbc4');axis.set_title('AVIE · Context only — image detection not assessed' if not eligible else 'AVIE · Findings (marine/reptile specialist detection unavailable)' if set(groups)&{'Aquatic/Marine Animals','Reptilian Creatures'} else 'AVIE · Findings by category',color='#e3eaed');axis.yaxis.get_major_locator().set_params(integer=True)
         for spine in axis.spines.values():spine.set_color('#344047')
         fig.tight_layout();fig.savefig(output_dir/'confidence.png',dpi=140,facecolor=fig.get_facecolor());plt.close(fig)
-        result={'simulated':False,'detections':detections,'imagery':info,'tileCount':len(windows),'durationSeconds':round(time.monotonic()-start,2),'notices':notices,'configuration':config,'analysisVersion':6,'humanAnalysis':person_metadata,**({'archaeologyAnalysis':archaeology_analysis} if archaeology_analysis is not None else {}),'organismAnalysis':{'requestedCategories':groups,'aerialLocator':aerial_metadata,'reviewOnlyCategories':[g for g in groups if g in ['Aquatic/Marine Animals','Reptilian Creatures']],'flagPolicy':'Possible = single model candidate; Probable = spatial agreement of independent general and aerial models, or a separately saved human assessment. Neither is a calibrated probability.','accuracyImprovementMeasured':False},**({'wildlifeAnalysis':animal_resolution_context(info)} if species else {}),**({'agricultureAnalysis':agriculture_analysis} if agriculture_analysis is not None else {})}
+        result={'simulated':False,'detections':detections,'imagery':info,'tileCount':len(windows),'durationSeconds':round(time.monotonic()-start,2),'notices':notices,'configuration':config,'analysisVersion':7,'analysisAt':analysis_at,'captureLabel':capture_label(info),'imageryAssessment':assessment,'detectionStatus':'completed' if eligible else 'not_run_insufficient_imagery','findingsContext':'Findings describe the captured image, not current conditions.','humanAnalysis':person_metadata,**({'archaeologyAnalysis':archaeology_analysis} if archaeology_analysis is not None else {}),'organismAnalysis':{'requestedCategories':groups,'aerialLocator':aerial_metadata,'reviewOnlyCategories':[g for g in groups if g in ['Aquatic/Marine Animals','Reptilian Creatures']],'flagPolicy':'Possible = single model candidate; Probable = spatial agreement of independent general and aerial models, or a separately saved human assessment. Neither is a calibrated probability.','accuracyImprovementMeasured':False},**({'wildlifeAnalysis':animal_resolution_context(info)} if species else {}),**({'agricultureAnalysis':agriculture_analysis} if agriculture_analysis is not None else {})}
         (output_dir/'report.json').write_text(json.dumps(result,indent=2));progress(stage='Uploading imagery and report',progress=95,tileCount=len(windows),tilesProcessed=len(windows),imagery=info)
         return result

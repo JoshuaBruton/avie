@@ -32,7 +32,7 @@ class DiscoveryTests(unittest.TestCase):
             d=PersonDetector(root);d.model=Model();findings,meta=d.predict(np.zeros((200,200,3),np.uint8),.15)
         self.assertEqual(len(findings),1);self.assertEqual(meta['inferencePixels'],960);self.assertEqual(meta['cropPixels'],320);self.assertFalse(meta['countIsCensus'])
     def test_pipeline_keeps_mapped_and_image_sources_separate(self):
-        info={'width':256,'height':256,'bounds3857':[-128,-128,128,128],'groundResolutionMeters':1}
+        info={'width':256,'height':256,'bounds3857':[-3.84,-3.84,3.84,3.84],'groundResolutionMeters':.03,'sourceType':'aerial','provider':'Test survey','nativeGsdCm':3,'licenseReference':'Test licence','analysisPermitted':True,'displayPermitted':True}
         c={'latitude':0,'longitude':0,'radiusKm':.5,'classes':['Archaeology','Living Organisms'],'organismCategories':['Humans'],'useAerialPeople':True,'personConfidence':15,'model':'yolov8n','tileSize':640,'confidence':31}
         model=SimpleNamespace(predict=lambda *a,**k:[SimpleNamespace(boxes=[],masks=None)])
         proposal={'box':[90,90,140,140],'polygon':[[90,90],[140,90],[140,140]],'rank':2.,'componentCount':8,'description':'Image geometry candidate'}
@@ -41,7 +41,7 @@ class DiscoveryTests(unittest.TestCase):
             e=Pipeline(root)
             with patch('pipeline.acquire',return_value=(Image.new('RGB',(256,256),'green'),info)),patch.object(e,'load_model',return_value=model),patch.object(e.people,'predict',return_value=([{'box':[150,150,160,165],'score':.3,'sourceClass':'pedestrian'}],{'status':'available'})),patch('pipeline.propose_archaeology',return_value=[proposal]),patch('pipeline.fetch_heritage',return_value=([heritage],{'status':'available'})):
                 r=e.run(c,root)
-        self.assertEqual(r['analysisVersion'],6);self.assertTrue(r['humanAnalysis']);self.assertEqual(len(r['detections']),3)
+        self.assertEqual(r['analysisVersion'],7);self.assertTrue(r['humanAnalysis']);self.assertEqual(len(r['detections']),3)
         a=next(d for d in r['detections'] if d['origin']=='archaeology-proposal');b=next(d for d in r['detections'] if d['origin']=='mapped-heritage')
         self.assertTrue(a['isImageDiscovery']);self.assertFalse(b['isImageDiscovery']);self.assertIsNone(a['confidence']);self.assertIsNone(b['confidence']);self.assertFalse(r['archaeologyAnalysis']['ageOrHumanOriginConfirmed'])
 

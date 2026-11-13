@@ -24,3 +24,19 @@ The active enhancement implemented here is a third-party aerial-trained model, n
 Sites now returns a `codex_auth` repository URL at `https://chatgpt.com/backend-api/codex/sites/git/appgprj_6af4bab0e944819184d89bd765b69836`. Ordinary Git access returns HTTP 400 with `missing_account_user_id: Unable to determine account user id.` The required host-supplied Sites Git credential helper is unavailable in this executor. Refreshing the native source credential did not change that result. Do not bypass authentication or publish an archive against an unpushed source SHA.
 
 Restore the host's Sites Git authentication, obtain a fresh repository credential for the same project, synchronize/push this source, then publish the matching built archive with owner-private access preserved. Refresh ownership/audience first. Restart the Python worker with its existing secret configuration only after confirming no scan is active; backend v6 must be paired with the new API/GUI. The existing remote worker has not been restarted, and the existing live Site remains at version 10. No AWS deployment has been made by this change.
+
+## Imagery policy integration (v7)
+
+- 20 Node checks cover API auth/queue/reviews, private aerial imports, actual PNG
+  dimensions, usage-rights requirements, scan-footprint containment, worker-version
+  compatibility, export metadata, historical dates, missing timestamps, native
+  resolution vs delivered sampling, and zoom limits.
+- 24 Python checks cover detector routing, mapped evidence, reviewed training
+  preparation, imported-pixel preservation, metadata mismatch rejection, and proof
+  that context-only scans do not invoke image detectors.
+- Chromium/Playwright checks cover Stonehenge defaults, missing-baseline messaging,
+  context reports, historical date precision, native zoom limits and responsive
+  desktop/mobile rendering, using isolated local fixtures (not field accuracy data).
+- No qualifying Stonehenge imagery has been obtained and no person/animal accuracy
+  claim is established. Sites publication does not restart the external Python
+  worker; its server/container must deploy the matching v7 backend.

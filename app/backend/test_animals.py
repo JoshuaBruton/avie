@@ -28,7 +28,7 @@ class AnimalTests(unittest.TestCase):
                 boxes=[SimpleNamespace(cls=torch.tensor([c]),conf=torch.tensor([.8]),xyxy=torch.tensor([[100.,100.,130.,130.]])) for c in [20,7,22] if c in kwargs['classes']]
                 return [SimpleNamespace(boxes=boxes,masks=None)]
         image=Image.new('RGB',(256,256),'gray')
-        info={'width':256,'height':256,'bounds3857':[-128,-128,128,128],'groundResolutionMeters':1}
+        info={'width':256,'height':256,'bounds3857':[-3.84,-3.84,3.84,3.84],'groundResolutionMeters':.03,'sourceType':'aerial','provider':'Test survey','nativeGsdCm':3,'licenseReference':'Test licence','analysisPermitted':True,'displayPermitted':True}
         config={'latitude':0,'longitude':0,'radiusKm':.5,'classes':['Wildlife','Truck'],'wildlifeSpecies':['Elephant'],'model':'yolov8n','tileSize':640,'confidence':25}
         with tempfile.TemporaryDirectory() as root:
             engine=Pipeline(root)

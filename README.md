@@ -73,4 +73,4 @@ The app includes overlapping-tile satellite analysis, structure/remnant candidat
 
 See [app/README.md](app/README.md) for setup, licensing, and limitations, and [app/VALIDATION.md](app/VALIDATION.md) for verification evidence. Custom human training needs reviewed positive/negative examples and independent-site validation; it does not run automatically. Credentials and downloaded model weights are excluded.
 
-The native-resolution eligibility rules and capture-metadata reporting described above currently apply to the original CLI and tile viewer. The web app remains a separate workflow; these changes do not establish high-detail provider coverage or update the web scan API.
+Native-resolution eligibility and capture-metadata reporting are integrated into both the CLI and the web app. The web app supports private licensed aerial imports and a separate context layer; see app/README.md for the external worker v7 upgrade. Qualifying Stonehenge provider coverage remains unverified.

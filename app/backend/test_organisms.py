@@ -25,7 +25,7 @@ class OrganismTests(unittest.TestCase):
     def test_spatial_corroboration_and_unclassified_points_keep_distinct_evidence(self):
         class Model:
             def predict(self,*args,**kw):return [SimpleNamespace(boxes=[SimpleNamespace(cls=torch.tensor([20]),conf=torch.tensor([.8]),xyxy=torch.tensor([[100.,100.,130.,130.]]))],masks=None)]
-        image=Image.new('RGB',(256,256),'gray');info={'width':256,'height':256,'bounds3857':[-128,-128,128,128],'groundResolutionMeters':1}
+        image=Image.new('RGB',(256,256),'gray');info={'width':256,'height':256,'bounds3857':[-3.84,-3.84,3.84,3.84],'groundResolutionMeters':.03,'sourceType':'aerial','provider':'Test survey','nativeGsdCm':3,'licenseReference':'Test licence','analysisPermitted':True,'displayPermitted':True}
         c={'latitude':0,'longitude':0,'radiusKm':.5,'classes':['Living Organisms'],'organismCategories':['Land Mammals','Unclassified Wildlife'],'model':'yolov8n','tileSize':640,'confidence':25}
         with tempfile.TemporaryDirectory() as root:
             e=Pipeline(root)

@@ -24,7 +24,7 @@ class TargetTests(unittest.TestCase):
             def predict(self,tile,**kwargs):
                 requested.append(kwargs['classes']);boxes=[SimpleNamespace(cls=torch.tensor([i]),conf=torch.tensor([.7]),xyxy=torch.tensor([[100.,100.,130.,130.]])) for i in [0,14,20,2,5,7] if i in kwargs['classes']]
                 return [SimpleNamespace(boxes=boxes,masks=None)]
-        image=Image.new('RGB',(256,256),'gray');info={'width':256,'height':256,'bounds3857':[-128,-128,128,128],'groundResolutionMeters':1}
+        image=Image.new('RGB',(256,256),'gray');info={'width':256,'height':256,'bounds3857':[-3.84,-3.84,3.84,3.84],'groundResolutionMeters':.03,'sourceType':'aerial','provider':'Test survey','nativeGsdCm':3,'licenseReference':'Test licence','analysisPermitted':True,'displayPermitted':True}
         c={'latitude':0,'longitude':0,'radiusKm':.5,'classes':['Road Transport','Wildlife','Living Organisms'],'wildlifeSpecies':['Bird'],'model':'yolov8n','tileSize':640,'confidence':25}
         with tempfile.TemporaryDirectory() as root:
             engine=Pipeline(root)

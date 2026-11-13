@@ -2,6 +2,62 @@
 
 The original dark HTML/CSS/JS dashboard is now connected to real satellite acquisition and YOLOv8 inference. No simulated detections are generated.
 
+## Detailed aerial baseline and capture reporting (v7)
+
+Stonehenge is the default location. Detailed image analysis now requires verified
+**native aerial GSD ≤5 cm/pixel**, preferably 2–3 cm, plus delivered pixel spacing
+≤5 cm and confirmed AI-analysis/app-display rights. Capture age is unrestricted.
+A resolution claim and permission flags must come from a verified provider/licence;
+checking the fields does not itself establish rights or independently verify GSD.
+
+Choose **Detailed view** and import a licensed JPEG/PNG with a metadata JSON sidecar.
+Use `public/baseline-metadata.example.json` as the field template; its unset values
+are intentionally ineligible. Add actual `width`, `height`, and `bounds3857`
+(`[west, south, east, north]`, EPSG:3857 meters) from a north-up orthophoto export.
+Reprojection/cropping must preserve genuine source detail; no enlargement qualifies
+an image. Up to 4096 native pixels per side and 8 MB per input image are supported.
+The entire scan circle must fit inside the imported bounds; an error asks the user
+to reduce the radius or change the center when it does not. Minimum aerial scan radius is 5 m (context requests remain at 50 m), so 2 cm exports can be scanned without enlarging their pixels. Very small exports need a larger native crop. Close-ups reuse the same
+baseline and cannot add detail or move outside its footprint. Uploaded imagery and
+metadata remain in private R2 storage. Do not upload imagery without the required rights.
+
+Esri remains a separate **Context layer**. Its native GSD, exact capture date and
+analysis rights are unverified, so image inference is skipped. Mapped heritage,
+mapped agriculture and manual observations remain separate evidence. Reports say
+`not_run_insufficient_imagery`, never successful zero detections. Older reports are
+labelled unverified; their saved observations remain historical records.
+
+The interface and JSON export show native GSD, delivered spacing, provider/licence,
+capture date/time at supplied precision, and a separate UTC analysis timestamp.
+Date-only and date-range records keep that precision. Missing capture data is
+explicitly unavailable; import/acquisition time is never substituted. Findings
+refer to capture time, not current conditions. Zoom stops at one display pixel per
+source pixel, including when the viewport is larger than a small image.
+
+**Provider status:** no qualifying Stonehenge imagery has been purchased or verified.
+Bluesky/Woolpert and Getmapping remain candidates; request full-resolution archive
+samples and terms permitting app display/AI analysis before choosing. Model training
+rights are separate. Detection accuracy still needs independent-site validation.
+
+### Upgrade the external Python worker
+
+Deploy this branch's `app/backend/` on the existing server/container and restart the
+worker using its existing secrets. From the repository root, a Docker deployment
+can build with `docker build -f app/backend/Dockerfile -t avie-worker:imagery-v7 app`;
+retain existing runtime environment secrets and the persistent `/models` volume.
+A Python deployment runs `python backend/worker.py` from `app/` with its existing
+environment. No credentials need to be changed or shared in chat.
+
+The heartbeat and queue claim advertise analysis version 7. The web API refuses
+aerial jobs on older workers and filters unsupported detailed findings returned
+for context imagery by older workers. Deployment of the Sites frontend/API does
+not upgrade the external Python server automatically. Check the engine version in
+`/api/health` after restarting. The current session cannot retrieve the existing
+worker secret, so the external runtime restart requires its hosting connection.
+
+These v7 requirements supersede earlier experimental satellite-detection behavior
+and the previous 32× zoom described in the historical notes below.
+
 ## How to use
 
 1. Open the private AVIE site and confirm **ENGINE ONLINE**.
@@ -10,7 +66,7 @@ The original dark HTML/CSS/JS dashboard is now connected to real satellite acqui
 4. Click map annotations or detection rows to review findings. Reviews are saved server-side.
 5. Export the JSON report, inspect the annotated imagery, or restore a scan from history.
 
-Start with a 0.5 km radius and YOLOv8n. A 25% confidence threshold near an airport or harbor is useful for exploring candidates; every result still needs human analysis. The default 65% threshold is more selective.
+Start with a qualifying aerial baseline, a 0.05 km radius contained in its bounds, and YOLOv8n. A 25% confidence threshold near an airport or harbor is useful for exploring candidates; every result still needs human analysis. The default 65% threshold is more selective.
 
 ## Architecture and persistence
 
@@ -66,7 +122,7 @@ Unknown visual features are bounded, geometry-based proposals for compact bright
 
 Use **Mark feature** to draw around any additional feature. The region, label, evidence source, estimated dimensions, notes, and assessment are saved with the scan and included in JSON exports. A manual mark stays unclassified; user assessments do not overwrite model probabilities. The report's **Export all current markings** includes manual annotations, while the original server-generated chart shows the original automatic results.
 
-**Inspect location** and **Acquire close-up & rescan** create linked child scans with 50/100/250 m radii, retaining the parent overview in history. The API supports scan radii from 0.05 to 5 km; the form explicitly supports km and mi (conversion factor 1.609344). Digital zoom now reaches 32× and mouse-wheel zoom centers on the pointer. Enlarging pixels does not add information.
+**Inspect location** and **Acquire close-up & rescan** create linked child scans with 50/100/250 m radii, retaining the parent overview in history. The API supports scan radii from 0.05 to 5 km; the form explicitly supports km and mi (conversion factor 1.609344). Digital zoom is now capped at native pixel size; mouse-wheel zoom centers on the pointer. Enlarging pixels does not add information.
 
 Detailed imagery requests probe supported provider scales. At places such as Göbekli Tepe, Esri may decline requests above level 18; the pipeline then reacquires at a supported scale and records `requestedZoom`, `samplingZoom`, `detailLimited`, and a report notice. This avoids presenting blank provider tiles or silently claiming higher native resolution. The acquired image's pixel spacing is reported; the source's native capture resolution and date remain unknown.
 

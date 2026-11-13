@@ -9,7 +9,7 @@ class SiteClient:
     def __init__(self,config):
         self.url=config['url'].rstrip('/');self.headers={'OAI-Sites-Authorization':'Bearer '+config['serviceToken'],'x-avie-worker-token':config['workerToken']}
     def call(self,path,payload=None,lease=None,data=None,method='POST'):
-        headers=dict(self.headers)
+        headers=dict(self.headers);headers['x-avie-analysis-version']='7'
         if lease:headers['x-avie-lease']=lease
         if data is not None:headers['content-type']='application/octet-stream'
         last=None
@@ -38,7 +38,7 @@ def main():
     client=SiteClient(config);stop=threading.Event()
     def heartbeat():
         while not stop.is_set():
-            try:client.call('/api/worker/heartbeat',{'model':'YOLOv8n/s/m','engine':'PyTorch + aerial humans + structure candidates + OWL-C + mapped context','analysisVersion':6})
+            try:client.call('/api/worker/heartbeat',{'model':'YOLOv8n/s/m','engine':'PyTorch + aerial humans + structure candidates + OWL-C + mapped context','analysisVersion':7})
             except Exception as e:logging.warning('Heartbeat: %s',e)
             stop.wait(12)
     thread=threading.Thread(target=heartbeat,daemon=True);thread.start()
@@ -59,7 +59,10 @@ def main():
                     client.call(prefix+'/progress',p,lease=lease);last_progress[0]=time.monotonic()
                 try:
                     with tempfile.TemporaryDirectory(prefix='avie-scan-') as folder:
-                        result=engine.run(job['configuration'],folder,progress)
+                        settings=dict(job['configuration'])
+                        if settings.get('source')=='aerial':
+                            settings['_baseline']=client.call('/api/baselines/'+settings['baselineId'],method='GET')['baseline']
+                        result=engine.run(settings,folder,progress)
                         for name in ['imagery.jpg','annotated.jpg','confidence.png','report.json']:
                             client.call(prefix+'/assets/'+name,lease=lease,data=(Path(folder)/name).read_bytes())
                         client.call(prefix+'/complete',result,lease=lease)
