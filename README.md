@@ -1,7 +1,8 @@
 # A.V.I.E.
 
-**Anomaly Vision Intelligence Engine** retrieves or imports geospatial imagery,
-runs YOLOv8 detection on eligible aerial captures, and saves scan reports.
+**Anomaly Vision Intelligence Engine** is an in-development geospatial imagery analysis and human-review application. Its private web dashboard imports licensed aerial imagery, runs supported detectors on eligible captures, and saves scans, annotations, reviews, and exports. A separate context layer provides map imagery without claiming detailed detections.
+
+Start with **[the current web application](app/README.md)**. The original Python CLI below remains available for local scans and reports. See **[validation and deployment status](app/VALIDATION.md)** for evidence and remaining work.
 The default location is Stonehenge (51.1789, -1.8262).
 
 ## Imagery requirements

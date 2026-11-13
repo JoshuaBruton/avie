@@ -1,6 +1,8 @@
-# AVIE — satellite analysis through the GUI
+# AVIE — geospatial imagery analysis and review
 
-The original dark HTML/CSS/JS dashboard is now connected to real satellite acquisition and YOLOv8 inference. No simulated detections are generated.
+AVIE combines a private browser dashboard, persistent scan/review API, and external Python inference worker. Detailed detection uses eligible licensed aerial imports; Esri imagery is a separate context layer and does not run image detectors under the current v7 policy. No simulated detections are generated.
+
+The original CLI remains at the repository root. This document describes the web application. Commands below run from `app/` unless explicitly stated otherwise. See [VALIDATION.md](VALIDATION.md) for current checks, historical experiments, and deployment boundaries.
 
 ## Detailed aerial baseline and capture reporting (v7)
 
@@ -52,21 +54,20 @@ The heartbeat and queue claim advertise analysis version 7. The web API refuses
 aerial jobs on older workers and filters unsupported detailed findings returned
 for context imagery by older workers. Deployment of the Sites frontend/API does
 not upgrade the external Python server automatically. Check the engine version in
-`/api/health` after restarting. The current session cannot retrieve the existing
-worker secret, so the external runtime restart requires its hosting connection.
+`/api/health` after restarting. The external runtime requires its own hosting connection and existing secret configuration. Repository changes alone do not establish which worker version is live.
 
-These v7 requirements supersede earlier experimental satellite-detection behavior
-and the previous 32× zoom described in the historical notes below.
+These v7 requirements supersede earlier experimental satellite-detection behavior. Model capabilities below describe eligible aerial analysis; the Esri experiments in the v6 notes are historical evidence, not the current context-layer behavior.
 
 ## How to use
 
-1. Open the private AVIE site and confirm **ENGINE ONLINE**.
-2. Set decimal latitude/longitude, radius in kilometers, target object types, model, tile size, and confidence threshold.
-3. Click **Initiate scan**. Acquisition, overlapping-tile inference, deduplication, and report progress come from the Python worker.
-4. Click map annotations or detection rows to review findings. Reviews are saved server-side.
-5. Export the JSON report, inspect the annotated imagery, or restore a scan from history.
+1. Open the private AVIE site and check engine health. Licensed aerial imports require worker analysis version 7 or newer.
+2. Choose **Detailed view**, import a licensed JPEG/PNG and metadata sidecar, and select a center/radius inside its coverage. Stonehenge is the default location, not a supplied verified baseline.
+3. Select target groups, model, tile size and confidence. Start with YOLOv8n and a radius that fits the imported native crop. Aerial radius can be 0.005–5 km; context radius is 0.05–5 km. The form also accepts miles.
+4. Initiate the scan. Eligible imagery proceeds through overlapping tiles, inference, deduplication and radius filtering. Context-only imagery produces an explicit insufficient-imagery status for detailed detection; mapped evidence remains separate.
+5. Review rows or annotations, add manual regions and notes, and save assessments. Restore scans from history or export JSON. Close-up scans retain parent lineage and reuse the same imported baseline without adding detail.
+6. Cut and label reviewed examples when source rights permit. Exporting examples does not retrain or activate a model.
 
-Start with a qualifying aerial baseline, a 0.05 km radius contained in its bounds, and YOLOv8n. A 25% confidence threshold near an airport or harbor is useful for exploring candidates; every result still needs human analysis. The default 65% threshold is more selective.
+The general confidence default is 65%; the dedicated aerial human layer has its own 15% default. These are candidate thresholds, not calibrated accuracy claims. No qualifying Stonehenge baseline has been obtained.
 
 ## Architecture and persistence
 
@@ -93,7 +94,7 @@ python backend/worker.py
 
 Set `AVIE_SITE_URL`, `AVIE_SITE_SERVICE_TOKEN`, and `AVIE_WORKER_TOKEN` through the host's secret manager. See `.env.example` for names; it is documentation, not an automatically loaded file. The Site service token is obtained through the owner's Sites connection. `AVIE_WORKER_TOKEN` must match the secret configured on the Site. Do not place secret values in shell command history or source control.
 
-For a container, build from the repository root with `backend/Dockerfile`, supply the same environment secrets at runtime, and mount a persistent `/models` volume. Standard YOLOv8n/s/m weights download from the official Ultralytics assets release on first use. The current development worker already has YOLOv8n cached.
+For a container, run `docker build -f app/backend/Dockerfile -t avie-worker:imagery-v7 app` from the repository root. Supply the same environment secrets at runtime and mount a persistent `/models` volume. Standard YOLOv8n/s/m weights download from the official Ultralytics assets release on first use; do not assume a fresh host has cached weights.
 
 ## Imagery and model limits
 
@@ -103,14 +104,17 @@ The mosaic is capped at 4096 × 4096 pixels. Larger radii therefore reduce effec
 
 Standard YOLOv8 COCO weights are general-purpose, not specialized overhead detectors. Car, truck, boat, airplane, bus, and train are supported classes. Small objects can be missed or misclassified. Zero detections does not mean an area is empty. Coordinates are image-based estimates, not surveyed positions. Custom satellite-trained weights are a future improvement.
 
-The repository's embedded Google API key is not copied or used. If Google Static Maps is added later, configure a fresh restricted key as a backend secret.
+The web app does not use Google Static Maps. The original CLI's optional context download reads `GOOGLE_API_KEY` from the environment; keep any provider credentials outside source control.
 
 ## Build and checks
 
 ```
 node build.mjs
-node --test tests/api.test.mjs
+node --test tests/*.test.mjs
+PYTHONPATH=backend python -m unittest discover -s backend -p 'test_*.py'
 ```
+
+Build before running Node tests: API tests import the generated `dist/server/index.js`. The Node build uses built-in modules; Python checks require the backend dependencies.
 
 `build.mjs` bundles browser files with the ESM Worker into `dist/server/index.js`. `.openai/hosting.json` retains the original Sites project and declares R2. Python inference is hosted separately from the Sites Cloudflare Worker.
 
@@ -122,15 +126,15 @@ Unknown visual features are bounded, geometry-based proposals for compact bright
 
 Use **Mark feature** to draw around any additional feature. The region, label, evidence source, estimated dimensions, notes, and assessment are saved with the scan and included in JSON exports. A manual mark stays unclassified; user assessments do not overwrite model probabilities. The report's **Export all current markings** includes manual annotations, while the original server-generated chart shows the original automatic results.
 
-**Inspect location** and **Acquire close-up & rescan** create linked child scans with 50/100/250 m radii, retaining the parent overview in history. The API supports scan radii from 0.05 to 5 km; the form explicitly supports km and mi (conversion factor 1.609344). Digital zoom is now capped at native pixel size; mouse-wheel zoom centers on the pointer. Enlarging pixels does not add information.
+**Inspect location** and **Acquire close-up & rescan** create linked child scans with 50/100/250 m radii, retaining the parent overview in history. The API supports aerial radii from 0.005 to 5 km and context radii from 0.05 to 5 km; the form explicitly supports km and mi (conversion factor 1.609344). Digital zoom is now capped at native pixel size; mouse-wheel zoom centers on the pointer. Enlarging pixels does not add information.
 
-Detailed imagery requests probe supported provider scales. At places such as Göbekli Tepe, Esri may decline requests above level 18; the pipeline then reacquires at a supported scale and records `requestedZoom`, `samplingZoom`, `detailLimited`, and a report notice. This avoids presenting blank provider tiles or silently claiming higher native resolution. The acquired image's pixel spacing is reported; the source's native capture resolution and date remain unknown.
+Historically, experimental Esri detection requests probed supported provider scales. Current Esri requests acquire context only; they do not authorize detailed inference. At places such as Göbekli Tepe, Esri may decline requests above level 18; the pipeline then reacquires at a supported scale and records `requestedZoom`, `samplingZoom`, `detailLimited`, and a report notice. This avoids presenting blank provider tiles or silently claiming higher native resolution. The acquired image's pixel spacing is reported; the source's native capture resolution and date remain unknown.
 
 No model or setting finds or identifies everything. Satellite building suggestions, visual candidates, and manual observations must remain distinct evidence sources for human analysis.
 
 ## Grouped targets, wildlife, agriculture, and organisms (v1.3)
 
-Section 02 now presents Road Transport (cars/trucks/buses), Train, Boat, Buildings/roofs, Unknown visual features, Wildlife/animals, Living Organisms, and Agriculture. Individual vehicle and aircraft checkboxes were removed. Old scan records remain readable; new close-ups normalize legacy road classes into Road Transport and omit aircraft.
+Target support includes Road Transport (cars/trucks/buses), Train, Boat, Buildings/roofs, Unknown visual features, Wildlife/animals, Living Organisms, Agriculture, and Archaeology / structure remnants. Individual vehicle and aircraft checkboxes were removed. Old scan records remain readable; new close-ups normalize legacy road classes into Road Transport and omit aircraft.
 
 Wildlife/animals is experimental. General COCO weights support Bird, Cat, Dog, Horse, Sheep, Cow, Elephant, Bear, Zebra, and Giraffe. The animal-class selection is saved and carried into close-ups. Living Organisms adds Person to those selected animal classes. It searches only supported people/animal classes, not all plants or living things. Selecting both groups does not run duplicate animal detections. A Person candidate does not identify an individual or establish a current location. These weights are not validated for satellite wildlife or human surveys.
 
@@ -138,7 +142,7 @@ The review pipeline retains species suggestions, probabilities, source, unknown/
 
 Agriculture uses bounded OpenStreetMap map extracts, with Overpass fallback, to mark mapped farmland, vineyards, orchards, farmyards, greenhouses, allotments, and meadow/grassland. Crop/produce tags such as grape, wheat, or corn are shown only where supplied by the map. **This is not image-based crop classification.** Geometry may be generalized or outdated and may differ from the satellite image. Mapped ways and multipolygon outer boundaries are supported; inner rings are retained for display. Extracts are bounded to 4 MB, four relation expansions, and 250 mapped features. Missing coverage, extraction limits, and unavailable providers are not evidence of no agriculture. Reports include data-source status, map tags, attribution, and `imageCropClassification: false`. Data attribution: © OpenStreetMap contributors, ODbL (https://www.openstreetmap.org/copyright).
 
-Tests: `node build.mjs && node --test tests/api.test.mjs` and `PYTHONPATH=backend python -m unittest discover -s backend -p 'test_*.py'`.
+Run all checks using the Build and checks section above.
 
 ## Place names and street-level inspection (v1.4)
 
@@ -166,9 +170,9 @@ Additional training candidates (not trained into AVIE): [WAID aerial wildlife](h
 
 ### Archaeology, dedicated aerial human search, and reviewed examples (v6)
 
-`Archaeology / structure remnants` runs coordinate-independent, multiscale contrast/stone-shadow cluster proposals. It flagged the central Stonehenge stone cluster in a reproduced 100 m-radius Esri image. These are exploratory structure candidates, not a trained archaeological-site classifier; human origin, age, and significance remain unconfirmed. It can miss buried sites, earthworks, walls, and crop marks; rocks, trees, paths and modern objects can be false positives. Known OSM historic features are a **separate** layer (`mapped-heritage`, `isImageDiscovery: false`), never counted as image discoveries. Map coverage may be incomplete or unavailable.
+`Archaeology / structure remnants` runs coordinate-independent, multiscale contrast/stone-shadow cluster proposals. In a historical pre-v7 experiment, it flagged the central Stonehenge stone cluster in a reproduced 100 m-radius Esri image. Current Esri context scans do not run these proposals. These are exploratory structure candidates, not a trained archaeological-site classifier; human origin, age, and significance remain unconfirmed. It can miss buried sites, earthworks, walls, and crop marks; rocks, trees, paths and modern objects can be false positives. Known OSM historic features are a **separate** layer (`mapped-heritage`, `isImageDiscovery: false`), never counted as image discoveries. Map coverage may be incomplete or unavailable.
 
-Humans can use the dedicated [YOLOv8s-VisDrone model](https://huggingface.co/mshamrai/yolov8s-visdrone), pinned to commit `996db9c3fbdf92ecdcf58411449a39232bfbcff6` with SHA-256 verification. Its model card declares OpenRAIL; VisDrone research-data terms and Ultralytics licensing apply. This is a third-party aerial-trained model, not a newly trained AVIE model. It searches 320 px crops with 25% overlap at 960 px inference size, with its own 15% default threshold. Magnification does not add source detail. Person and people/group outputs are suggestions, not a census or confirmed presence. On one reproduced Stonehenge scene, the earlier whole-tile COCO pass yielded zero, versus three deduplicated possible-person boxes from the new layer. This single-scene comparison is not a measured accuracy/recall improvement across sites. The provider fell back from requested level 20 to supported level 19.
+Humans can use the dedicated [YOLOv8s-VisDrone model](https://huggingface.co/mshamrai/yolov8s-visdrone), pinned to commit `996db9c3fbdf92ecdcf58411449a39232bfbcff6` with SHA-256 verification. Its model card declares OpenRAIL; VisDrone research-data terms and Ultralytics licensing apply. This is a third-party aerial-trained model, not a newly trained AVIE model. It searches 320 px crops with 25% overlap at 960 px inference size, with its own 15% default threshold. Magnification does not add source detail. Person and people/group outputs are suggestions, not a census or confirmed presence. In one historical pre-v7 Stonehenge experiment, the earlier whole-tile COCO pass yielded zero, versus three deduplicated possible-person boxes from the new layer. This single-scene comparison is not a measured accuracy/recall improvement across sites. The provider fell back from requested level 20 to supported level 19.
 
 Analyze any finding → **Cut & label training example**. For a missed person, draw a tight region using Mark feature first. Native crops (maximum 512 px per side) can be labelled human / not-human or structure-remnant / not-structure, with explicit human-review acknowledgement. Private R2 records retain source bounds, normalized positive boxes, coordinates, attribution, scan lineage, and notes. The library supports review, deletion, and ZIP export. A reviewed label is not independently established ground truth, and saving an example never retrains the engine automatically.
 
